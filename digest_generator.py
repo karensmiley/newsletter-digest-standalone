@@ -282,7 +282,7 @@ class DigestGenerator:
         # Header
         now = datetime.now()
         html_parts.append(f'''
-        <div style="text-align: center; padding: 40px 20px; margin-bottom: 40px; border-bottom: 1px solid #ddd;">
+        <div style="text-align: center; padding: 40px 20px; margin-bottom: 40px;">
             <h1 style="font-size: 36px; font-weight: 700; color: #1a1a1a; margin: 0 0 10px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">Newsletter Digest</h1>
             <div style="font-size: 16px; color: #666; margin-bottom: 8px;">{now.strftime('%A, %B %d, %Y')}</div>
             <div style="font-size: 14px; color: #666; margin-bottom: 8px;">{len(featured)} Featured • {len(self.articles)} Total Articles</div>
@@ -292,14 +292,14 @@ class DigestGenerator:
 
         # Featured Section
         if featured:
-            html_parts.append('<h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin: 40px 0 20px 0; padding-bottom: 8px; border-bottom: 2px solid #ddd; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif;">Featured Articles</h2>')
+            html_parts.append('<h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin: 40px 0 20px 0; padding-bottom: 8px; border-bottom: 1px solid #eee; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif;">Featured Articles</h2>')
 
             for i, article in enumerate(featured, 1):
                 html_parts.append(self._format_article_featured(article, number=i))
 
         # Wildcard Section
         if wildcard:
-            html_parts.append('<h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin: 40px 0 20px 0; padding-bottom: 8px; border-bottom: 2px solid #ddd; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif;">Wildcard Pick</h2>')
+            html_parts.append('<h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin: 40px 0 20px 0; padding-bottom: 8px; border-bottom: 1px solid #eee; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif;">Wildcard Pick</h2>')
             html_parts.append(self._format_article_featured(wildcard, wildcard=True))
 
         # Categorized Sections
@@ -307,7 +307,7 @@ class DigestGenerator:
             articles = categorized[category][:10]  # Limit per category
 
             if articles:
-                html_parts.append(f'<h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin: 40px 0 20px 0; padding-bottom: 8px; border-bottom: 2px solid #ddd; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif;">{category}</h2>')
+                html_parts.append(f'<h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin: 40px 0 20px 0; padding-bottom: 8px; border-bottom: 1px solid #eee; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif;">{category}</h2>')
 
                 for article in articles:
                     html_parts.append(self._format_article_compact(article))
@@ -342,10 +342,9 @@ class DigestGenerator:
         if metrics:
             engagement_html += f'<div>{" • ".join(metrics)}</div>'
 
-        # Add score
+        # Always add score (even if 0)
         score = article.get('score', 0)
-        if score > 0:
-            engagement_html += f'<div>Score: {score:.1f}</div>'
+        engagement_html += f'<div>Score: {score:.1f}</div>'
 
         engagement_html += '</div>'
 
@@ -379,10 +378,9 @@ class DigestGenerator:
         if metrics:
             engagement_html += f'<div>{" • ".join(metrics)}</div>'
 
-        # Add score on separate line
+        # Always add score (even if 0)
         score = article.get('score', 0)
-        if score > 0:
-            engagement_html += f'<div>Score: {score:.1f}</div>'
+        engagement_html += f'<div>Score: {score:.1f}</div>'
 
         engagement_html += '</div>'
 
