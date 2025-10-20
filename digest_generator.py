@@ -325,65 +325,73 @@ class DigestGenerator:
         if wildcard:
             title_text = f"🎲 {title_text}"
 
-        # Engagement metadata
+        # Build engagement lines
         days_ago = (datetime.now(timezone.utc) - article['published']).days
-        meta_parts = [article['newsletter_name']]
+        engagement_html = f'<div style="font-size: 13px; color: #666; line-height: 1.6;">'
+        engagement_html += f'<div>{article["newsletter_name"]} • {days_ago}d ago</div>'
 
+        # Add engagement metrics if present
+        metrics = []
         if article['comment_count'] > 0:
-            meta_parts.append(f"{article['comment_count']} comments")
+            metrics.append(f"{article['comment_count']} comments")
         if article['reaction_count'] > 0:
-            meta_parts.append(f"{article['reaction_count']} likes")
+            metrics.append(f"{article['reaction_count']} likes")
         if article['restacks'] > 0:
-            meta_parts.append(f"{article['restacks']} restacks")
+            metrics.append(f"{article['restacks']} restacks")
 
-        meta_parts.append(f"{days_ago}d ago")
+        if metrics:
+            engagement_html += f'<div>{" • ".join(metrics)}</div>'
 
         # Add score
         score = article.get('score', 0)
         if score > 0:
-            meta_parts.append(f"Score: {score:.1f}")
+            engagement_html += f'<div>Score: {score:.1f}</div>'
 
-        meta_text = ' • '.join(meta_parts)
+        engagement_html += '</div>'
 
         # Build HTML
         return f'''
-        <div style="margin-bottom: 40px; padding-bottom: 30px; border-bottom: 1px solid #ddd;">
+        <div style="margin-bottom: 40px;">
             <div style="font-size: 22px; font-weight: 700; line-height: 1.3; margin-bottom: 8px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
                 <a href="{article['link']}" style="color: #1a1a1a; text-decoration: none;">{title_text}</a>
             </div>
-            <div style="font-size: 14px; color: #666; margin-bottom: 15px;">{meta_text}</div>
-            {f'<div style="font-size: 17px; line-height: 1.7; color: #1a1a1a; margin-bottom: 15px;">{article["summary"]}</div>' if article['summary'] else ''}
+            {engagement_html}
+            {f'<div style="font-size: 17px; line-height: 1.7; color: #1a1a1a; margin-top: 12px;">{article["summary"]}</div>' if article['summary'] else ''}
         </div>
         '''
 
     def _format_article_compact(self, article):
         """Format a compact article (for category sections)"""
-        # Engagement metadata
+        # Build engagement lines (SEPARATE LINES)
         days_ago = (datetime.now(timezone.utc) - article['published']).days
-        meta_parts = [article['newsletter_name']]
+        engagement_html = f'<div style="font-size: 13px; color: #666; line-height: 1.6;">'
+        engagement_html += f'<div>{article["newsletter_name"]} • {days_ago}d ago</div>'
 
+        # Add engagement metrics if present
+        metrics = []
         if article['comment_count'] > 0:
-            meta_parts.append(f"{article['comment_count']} comments")
+            metrics.append(f"{article['comment_count']} comments")
         if article['reaction_count'] > 0:
-            meta_parts.append(f"{article['reaction_count']} likes")
+            metrics.append(f"{article['reaction_count']} likes")
         if article['restacks'] > 0:
-            meta_parts.append(f"{article['restacks']} restacks")
+            metrics.append(f"{article['restacks']} restacks")
 
-        meta_parts.append(f"{days_ago}d ago")
+        if metrics:
+            engagement_html += f'<div>{" • ".join(metrics)}</div>'
 
-        # Add score
+        # Add score on separate line
         score = article.get('score', 0)
         if score > 0:
-            meta_parts.append(f"Score: {score:.1f}")
+            engagement_html += f'<div>Score: {score:.1f}</div>'
 
-        meta_text = ' • '.join(meta_parts)
+        engagement_html += '</div>'
 
         return f'''
-        <div style="padding: 15px 0; border-bottom: 1px solid #ddd;">
+        <div style="padding: 15px 0;">
             <div style="font-size: 18px; font-weight: 600; line-height: 1.4; margin-bottom: 5px;">
                 <a href="{article['link']}" style="color: #1a1a1a; text-decoration: none;">{article['title']}</a>
             </div>
-            <div style="font-size: 14px; color: #666;">{meta_text}</div>
+            {engagement_html}
         </div>
         '''
 
