@@ -7,10 +7,10 @@ A simple, self-contained digest generator that runs locally with **no authentica
 Creates a formatted newsletter digest from your Substack subscriptions that you can copy/paste directly into Substack's editor.
 
 ### Features
-- ✅ **No login required** - Uses public RSS feeds and APIs
+- ✅ **No login required** - Uses public RSS feeds and HTML parsing
 - ✅ **Free forever** - No API keys, no paid services
-- ✅ **Engagement metrics** - Shows comments, likes, and restacks
-- ✅ **Smart scoring** - Daily Average model (engagement normalized by age)
+- ✅ **Engagement metrics** - Shows comments and likes from article pages
+- ✅ **Flexible scoring** - Choose Standard or Daily Average scoring
 - ✅ **Interactive CLI** - Guided setup with sensible defaults
 - ✅ **Substack-ready** - Copy/paste formatted HTML directly
 
@@ -77,7 +77,11 @@ You'll be asked:
    - Adds a random "hidden gem" from next 10 articles
    - Makes digest more interesting!
 
-5. **Output filename** (default: `digest_output.html`)
+5. **Scoring method** (default: Standard)
+   - Daily Average: Favors recent articles (10 likes today > 50 likes last week)
+   - Standard: Favors total engagement (50 likes last week > 10 likes today)
+
+6. **Output filename** (default: `digest_output.html`)
    - Name of the HTML file to save
 
 ### Example session:
@@ -97,6 +101,11 @@ How many days back to fetch articles? (default: 7): [Enter]
 How many featured articles? (default: 5): [Enter]
 Include wildcard pick? (y/n, default: y): [Enter]
 
+Scoring method:
+  1. Daily Average - Favors recent articles (10 likes today > 50 likes last week)
+  2. Standard - Favors total engagement (50 likes last week > 10 likes today)
+Choose scoring method (1/2, default: 2): [Enter]
+
 Step 3: Fetch Articles
 ----------------------------------------
 📰 Fetching articles from past 7 days...
@@ -107,12 +116,12 @@ Step 3: Fetch Articles
 
 Step 4: Score Articles
 ----------------------------------------
-📊 Scoring articles using Daily Average model...
+📊 Scoring articles using Standard model (total engagement + length)...
 ✅ Scored 47 articles
 
 🏆 Top 5 articles:
    1. The Future of AI Agents
-      Score: 15.3 | Engagement: 45 comments, 234 likes, 12 restacks | 2d old
+      Score: 442.8 | 45 comments, 234 likes | 4,521 words | 2d old
    ...
 
 Step 5: Generate Digest
@@ -143,11 +152,11 @@ The digest includes:
 Top-scored articles with:
 - Numbered list (1, 2, 3...)
 - Full title with link
-- Newsletter name
-- Engagement stats (comments, likes, restacks)
+- Newsletter name and author
+- Engagement stats (comments, likes)
 - Days since publication
 - Article summary
-- Daily Average Score
+- Engagement score
 
 ### 🎲 Wildcard Pick (optional)
 A random article from the next 10 highest-scored articles - helps surface hidden gems!
@@ -168,32 +177,77 @@ Each article shows:
 ## How It Works
 
 ### Data Sources
-1. **RSS Feeds** - Gets article titles, links, dates (public, no auth)
-2. **Substack API** - Gets engagement metrics via public endpoints like:
+1. **RSS Feeds** - Gets article titles, links, dates, content (public, no auth)
    ```
-   https://newsletter.substack.com/api/v1/posts/slug
+   https://newsletter.substack.com/feed
    ```
-   Returns: `comment_count`, `reactions`, `restacks`
+2. **HTML Parsing** - Extracts engagement metrics from article pages
+   - Parses Schema.org structured data in meta tags
+   - Gets `comment_count` and `like_count` (reactions)
+   - **No API calls** - complies with Substack TOS
 
-### Scoring Algorithm (Daily Average)
+### Scoring Algorithm
 
+You can choose between two scoring methods:
+
+#### 1. Standard Scoring (Default - Recommended)
+
+**Formula:**
 ```python
-total_engagement = (comments × 2) + likes + (restacks × 3)
-daily_average = total_engagement / days_since_publication
-score = daily_average × (1 + length_bonus)
+engagement_score = (comments × 3) + likes
+score = engagement_score × (1 + length_bonus)
 ```
 
-**Why Daily Average?**
-- Rewards consistent quality over viral spikes
-- Newer articles compete fairly with older ones
-- Prevents recency bias
-- Highlights evergreen content
+**Best for:**
+- Highlighting articles with most total engagement
+- Finding evergreen content that remains popular
+- Weekly/bi-weekly digests with older articles
+- Balanced view across publication dates
 
-**Weights:**
-- Comments: 2× (high-signal engagement)
-- Likes: 1×
-- Restacks: 3× (highest-signal - someone shared it!)
-- Length bonus: +20% for 1000+ words, +10% for 500+ words
+**Example:**
+- Article from 7 days ago with 50 likes = score of 50
+- Article from today with 10 likes = score of 10
+- The 7-day-old article wins! 🏆
+
+#### 2. Daily Average Scoring
+
+**Formula:**
+```python
+engagement_score = (comments × 3) + likes
+daily_avg = engagement_score / days_since_publication
+score = daily_avg × (1 + length_bonus)
+```
+
+**Best for:**
+- Highlighting fresh, trending content
+- Daily digests where recency matters
+- Identifying articles gaining momentum
+- When you want newest content prioritized
+
+**Example:**
+- Article from 7 days ago with 50 likes = score of 7.1/day
+- Article from today with 10 likes = score of 10/day
+- Today's article wins! 🏆
+
+#### Shared Settings
+
+**Weights (both methods):**
+- **Comments: 3×** (deeper engagement signal)
+- **Likes: 1×** (standard engagement)
+- **Length bonus:**
+  - 1000-2000 words: +10%
+  - 2000+ words: +20%
+
+**To customize scoring:**
+Edit the constants in `digest_generator.py` around line 245:
+```python
+COMMENT_WEIGHT = 3      # Change comment weight
+LIKE_WEIGHT = 1         # Change like weight
+LONG_ARTICLE_WORDS = 2000
+LONG_ARTICLE_BONUS = 0.20   # +20% bonus
+MEDIUM_ARTICLE_WORDS = 1000
+MEDIUM_ARTICLE_BONUS = 0.10  # +10% bonus
+```
 
 ## Troubleshooting
 
@@ -212,32 +266,41 @@ score = daily_average × (1 + length_bonus)
 - Normal to see a few failures in large lists
 
 ### Engagement metrics are zero
-- Substack may rate-limit public API calls
-- Articles are still included, just missing metrics
-- Try running again in a few minutes
+- Article may genuinely have no engagement yet
+- HTML parsing may have failed for that specific article
+- Articles are still included, just scored lower
 
 ## Customization
 
-You can edit `digest_generator.py` to customize:
+### Scoring Weights
 
-### Engagement weights (line ~200):
+To customize the scoring model, edit `digest_generator.py` around line 250:
+
 ```python
-total_engagement = (
-    (article['comment_count'] * 2) +  # Change comment weight
-    article['reaction_count'] +       # Change like weight
-    (article['restacks'] * 3)         # Change restack weight
-)
+# SCORING CONFIGURATION - Edit these to change the scoring model
+COMMENT_WEIGHT = 3      # How much to weight comments (default: 3x)
+LIKE_WEIGHT = 1         # How much to weight likes (default: 1x)
+
+# Length bonuses (as decimal multipliers)
+LONG_ARTICLE_WORDS = 2000
+LONG_ARTICLE_BONUS = 0.20   # +20% for 2000+ words
+
+MEDIUM_ARTICLE_WORDS = 1000
+MEDIUM_ARTICLE_BONUS = 0.10  # +10% for 1000-2000 words
 ```
 
-### HTML styling (line ~300+):
+### HTML Styling
+
+Edit styling around line 300+ in `digest_generator.py`:
 - Font sizes
 - Colors
 - Spacing
 - Border styles
 
-### Article limits:
-- Featured count (CLI prompt)
-- Articles per category (line ~350): `articles[:10]`
+### Article Limits
+
+- **Featured count**: Set via CLI prompt
+- **Articles per category**: Edit line ~350: `articles[:10]`
 
 ## Support
 

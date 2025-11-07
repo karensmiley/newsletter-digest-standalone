@@ -2,14 +2,14 @@
 """
 Standalone Digest Generator
 ===========================
-Generates newsletter digests from my_newsletters.csv using free Substack APIs.
-No authentication required, no paid API calls.
+Generates newsletter digests from my_newsletters.csv using RSS feeds and HTML parsing.
+No Substack API calls, no authentication required.
 
 Features:
 - Reads newsletters from CSV export
-- Fetches articles via RSS feeds
-- Gets engagement metrics (likes, comments) from public Substack API
-- Uses Daily Average scoring model
+- Fetches articles via RSS feeds (substackURL/feed)
+- Extracts engagement metrics (likes, comments) from article page HTML
+- Engagement-based scoring with length bonus
 - Interactive CLI for configuration
 - Outputs Substack-ready HTML
 
@@ -112,6 +112,23 @@ class DigestGenerator:
                     elif hasattr(entry, 'authors') and entry.authors:
                         authors.extend([a.get('name', a) if isinstance(a, dict) else a for a in entry.authors])
 
+                    # Get content for word count (try content first, fallback to summary)
+                    content_html = ''
+                    if hasattr(entry, 'content') and entry.content:
+                        # RSS content is usually a list of dicts with 'value' key
+                        if isinstance(entry.content, list) and len(entry.content) > 0:
+                            content_html = entry.content[0].get('value', '')
+                        else:
+                            content_html = str(entry.content)
+                    elif hasattr(entry, 'summary') and entry.summary:
+                        content_html = entry.summary
+
+                    # Calculate word count from content
+                    word_count = 0
+                    if content_html:
+                        text = BeautifulSoup(content_html, 'html.parser').get_text()
+                        word_count = len(text.split())
+
                     # Extract article data
                     article = {
                         'title': entry.get('title', ''),
@@ -121,14 +138,13 @@ class DigestGenerator:
                         'newsletter_name': newsletter['name'],
                         'newsletter_category': newsletter['category'],
                         'authors': authors,  # List of author names
-                        'word_count': 0,  # Will calculate if needed
-                        'comment_count': 0,
-                        'reaction_count': 0,
-                        'restacks': 0,
+                        'word_count': word_count,
+                        'comment_count': 0,  # Extracted from HTML
+                        'reaction_count': 0,  # Extracted from HTML
                     }
 
-                    # Get engagement metrics from Substack API
-                    self._fetch_engagement_metrics(article)
+                    # Fetch engagement metrics from article page HTML
+                    self._fetch_engagement_from_html(article)
 
                     articles.append(article)
                     article_count += 1
@@ -147,73 +163,6 @@ class DigestGenerator:
         self.articles = articles
         return articles
 
-    def _fetch_engagement_metrics(self, article):
-        """Fetch engagement metrics from Substack's public API"""
-        try:
-            # Extract slug from URL
-            # Format: https://newsletter.substack.com/p/slug-here
-            match = re.search(r'/p/([^/?\#]+)', article['link'])
-            if not match:
-                return
-
-            slug = match.group(1)
-
-            # Extract base URL
-            base_url_match = re.match(r'(https?://[^/]+)', article['link'])
-            if not base_url_match:
-                return
-
-            base_url = base_url_match.group(1)
-
-            # Fetch post details from Substack API
-            api_url = f"{base_url}/api/v1/posts/{slug}"
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (compatible; DigestBot/1.0)',
-                'Accept': 'application/json'
-            }
-
-            response = requests.get(api_url, headers=headers, timeout=10)
-
-            if response.status_code == 200:
-                post_data = response.json()
-
-                # Extract engagement metrics
-                article['comment_count'] = post_data.get('comment_count', 0)
-
-                # Sum up reactions
-                reactions = post_data.get('reactions', {})
-                if isinstance(reactions, dict):
-                    article['reaction_count'] = sum(reactions.values())
-
-                article['restacks'] = post_data.get('restacks', 0)
-
-                # Get word count from body
-                body_html = post_data.get('body_html', '')
-                if body_html:
-                    text = BeautifulSoup(body_html, 'html.parser').get_text()
-                    article['word_count'] = len(text.split())
-
-                # Extract authors from API if not already present
-                if not article.get('authors'):
-                    authors_data = []
-                    # Try to get primary author
-                    if 'publishedBylines' in post_data:
-                        for byline in post_data['publishedBylines']:
-                            if 'name' in byline:
-                                authors_data.append(byline['name'])
-                    # Fallback to single author field
-                    elif 'author' in post_data and isinstance(post_data['author'], dict):
-                        author_name = post_data['author'].get('name')
-                        if author_name:
-                            authors_data.append(author_name)
-
-                    if authors_data:
-                        article['authors'] = authors_data
-
-        except Exception as e:
-            # Silently fail - engagement metrics are optional
-            pass
-
     def _clean_summary(self, html_content):
         """Remove HTML tags from summary"""
         if not html_content:
@@ -228,40 +177,109 @@ class DigestGenerator:
 
         return text.strip()
 
-    def score_articles_daily_average(self):
-        """
-        Score articles using Daily Average model
+    def _fetch_engagement_from_html(self, article):
+        """Fetch engagement metrics by parsing the article page HTML"""
+        try:
+            headers = {'User-Agent': 'Mozilla/5.0 (compatible; DigestBot/1.0)'}
+            response = requests.get(article['link'], headers=headers, timeout=10)
 
-        Engagement score normalized by days since publication.
-        This rewards consistently good articles over viral spikes.
+            if response.status_code != 200:
+                return
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # Method 1: Parse interactionStatistic meta tag (structured data)
+            meta_tag = soup.find('meta', {'property': 'interactionStatistic'})
+            if meta_tag and meta_tag.get('content'):
+                import json
+                try:
+                    stats = json.loads(meta_tag['content'])
+                    for stat in stats:
+                        if stat.get('interactionType') == 'https://schema.org/LikeAction':
+                            article['reaction_count'] = stat.get('userInteractionCount', 0)
+                        elif stat.get('interactionType') == 'https://schema.org/CommentAction':
+                            article['comment_count'] = stat.get('userInteractionCount', 0)
+                except json.JSONDecodeError:
+                    pass
+
+            # Method 2: Parse aria-labels from buttons (backup method)
+            if article['reaction_count'] == 0:
+                like_button = soup.find('button', {'aria-label': re.compile(r'Like \((\d+)\)')})
+                if like_button:
+                    match = re.search(r'Like \((\d+)\)', like_button.get('aria-label', ''))
+                    if match:
+                        article['reaction_count'] = int(match.group(1))
+
+            if article['comment_count'] == 0:
+                comment_button = soup.find('button', {'aria-label': re.compile(r'View comments \((\d+)\)')})
+                if comment_button:
+                    match = re.search(r'View comments \((\d+)\)', comment_button.get('aria-label', ''))
+                    if match:
+                        article['comment_count'] = int(match.group(1))
+
+        except Exception as e:
+            # Silently fail - engagement metrics are optional
+            pass
+
+    def score_articles(self, use_daily_average=True):
         """
-        print("\n📊 Scoring articles using Daily Average model...")
+        Score articles based on engagement and content length
+
+        Scoring formula:
+        - Engagement score (weighted heavily):
+          * Comments weighted 3x (deeper engagement)
+          * Likes weighted 1x (standard engagement)
+        - Daily average (optional): Divide by days since publication
+          * Favors recently published articles
+          * A 1-day article with 10 likes scores higher than 7-day article with 50 likes
+        - Standard (optional): Raw engagement without time adjustment
+          * Favors articles with most total engagement
+          * Better for highlighting evergreen content
+        - Length bonus (weighted lightly):
+          * 1000-2000 words: +10%
+          * 2000+ words: +20%
+
+        To customize scoring weights, edit the values below:
+        """
+        if use_daily_average:
+            print("\n📊 Scoring articles using Daily Average model (engagement + length)...")
+        else:
+            print("\n📊 Scoring articles using Standard model (total engagement + length)...")
 
         now = datetime.now(timezone.utc)
 
-        for article in self.articles:
-            # Calculate days since publication (minimum 1 to avoid division by zero)
-            days_old = max((now - article['published']).days, 1)
+        # SCORING CONFIGURATION - Edit these to change the scoring model
+        COMMENT_WEIGHT = 3      # How much to weight comments (deeper engagement)
+        LIKE_WEIGHT = 1         # How much to weight likes (standard engagement)
 
-            # Calculate total engagement
-            total_engagement = (
-                (article['comment_count'] * 2) +  # Comments weighted 2x
-                article['reaction_count'] +       # Likes
-                (article['restacks'] * 3)         # Restacks weighted 3x
+        # Length bonuses (as decimal multipliers)
+        LONG_ARTICLE_WORDS = 2000
+        LONG_ARTICLE_BONUS = 0.20   # +20% for 2000+ words
+
+        MEDIUM_ARTICLE_WORDS = 1000
+        MEDIUM_ARTICLE_BONUS = 0.10  # +10% for 1000-2000 words
+
+        for article in self.articles:
+            # Calculate total engagement score
+            engagement_score = (
+                (article['comment_count'] * COMMENT_WEIGHT) +
+                (article['reaction_count'] * LIKE_WEIGHT)
             )
 
-            # Daily average engagement
-            daily_avg = total_engagement / days_old
+            # Apply daily average if requested
+            if use_daily_average:
+                days_old = max((now - article['published']).days, 1)
+                engagement_score = engagement_score / days_old
 
-            # Bonus for longer articles (over 1000 words)
+            # Calculate length bonus
             length_bonus = 0
-            if article['word_count'] > 1000:
-                length_bonus = 0.2
-            elif article['word_count'] > 500:
-                length_bonus = 0.1
+            if article['word_count'] >= LONG_ARTICLE_WORDS:
+                length_bonus = LONG_ARTICLE_BONUS
+            elif article['word_count'] >= MEDIUM_ARTICLE_WORDS:
+                length_bonus = MEDIUM_ARTICLE_BONUS
 
-            # Final score
-            article['score'] = daily_avg * (1 + length_bonus)
+            # Final score: engagement score (with or without daily avg) + length bonus
+            article['score'] = engagement_score * (1 + length_bonus)
 
         # Sort by score descending
         self.articles.sort(key=lambda x: x['score'], reverse=True)
@@ -272,12 +290,14 @@ class DigestGenerator:
         if self.articles:
             print("\n🏆 Top 5 articles:")
             for i, article in enumerate(self.articles[:5], 1):
+                now = datetime.now(timezone.utc)
                 days_old = (now - article['published']).days
                 print(f"   {i}. {article['title'][:60]}")
-                print(f"      Score: {article['score']:.2f} | Engagement: {article['comment_count']} comments, "
-                      f"{article['reaction_count']} likes, {article['restacks']} restacks | {days_old}d old")
+                print(f"      Score: {article['score']:.1f} | {article['comment_count']} comments, "
+                      f"{article['reaction_count']} likes | "
+                      f"{article['word_count']} words | {days_old}d old")
 
-    def generate_digest_html(self, featured_count=5, include_wildcard=False):
+    def generate_digest_html(self, featured_count=5, include_wildcard=False, days_back=7, scoring_method='daily_average'):
         """Generate Substack-ready HTML digest with clean formatting"""
         print(f"\n📝 Generating digest HTML...")
 
@@ -306,12 +326,13 @@ class DigestGenerator:
 
         # Header
         now = datetime.now()
+        scoring_label = "Daily Average" if scoring_method == 'daily_average' else "Standard"
         html_parts.append(f'''
         <div style="text-align: center; padding: 40px 20px; margin-bottom: 40px;">
             <h1 style="font-size: 36px; font-weight: 700; color: #1a1a1a; margin: 0 0 10px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">Newsletter Digest</h1>
             <div style="font-size: 16px; color: #666; margin-bottom: 8px;">{now.strftime('%A, %B %d, %Y')}</div>
             <div style="font-size: 14px; color: #666; margin-bottom: 8px;">{len(featured)} Featured • {len(self.articles)} Total Articles</div>
-            <div style="font-size: 13px; color: #888; font-style: italic;">Daily Average scoring • {len(self.newsletters)} newsletters</div>
+            <div style="font-size: 13px; color: #888; font-style: italic;">{scoring_label} scoring (engagement + length) • {days_back} day lookback • {len(self.newsletters)} newsletters</div>
         </div>
         ''')
 
@@ -368,15 +389,17 @@ class DigestGenerator:
             metrics.append(f"{article['comment_count']} comments")
         if article['reaction_count'] > 0:
             metrics.append(f"{article['reaction_count']} likes")
-        if article['restacks'] > 0:
-            metrics.append(f"{article['restacks']} restacks")
 
         if metrics:
             engagement_html += f'<div>{" • ".join(metrics)}</div>'
 
-        # Always add score (even if 0)
+        # Add word count and score
         score = article.get('score', 0)
-        engagement_html += f'<div>Score: {score:.1f}</div>'
+        word_count = article.get('word_count', 0)
+        score_line = f'Score: {score:.1f}'
+        if word_count > 0:
+            score_line += f' • {word_count:,} words'
+        engagement_html += f'<div>{score_line}</div>'
 
         engagement_html += '</div>'
 
@@ -411,15 +434,17 @@ class DigestGenerator:
             metrics.append(f"{article['comment_count']} comments")
         if article['reaction_count'] > 0:
             metrics.append(f"{article['reaction_count']} likes")
-        if article['restacks'] > 0:
-            metrics.append(f"{article['restacks']} restacks")
 
         if metrics:
             engagement_html += f'<div>{" • ".join(metrics)}</div>'
 
-        # Always add score (even if 0)
+        # Add word count and score
         score = article.get('score', 0)
-        engagement_html += f'<div>Score: {score:.1f}</div>'
+        word_count = article.get('word_count', 0)
+        score_line = f'Score: {score:.1f}'
+        if word_count > 0:
+            score_line += f' • {word_count:,} words'
+        engagement_html += f'<div>{score_line}</div>'
 
         engagement_html += '</div>'
 
@@ -482,6 +507,13 @@ def interactive_cli():
     wildcard = input("Include wildcard pick? (y/n, default: y): ").strip().lower()
     include_wildcard = wildcard != 'n'
 
+    print("\nScoring method:")
+    print("  1. Daily Average - Favors recent articles (10 likes today > 50 likes last week)")
+    print("  2. Standard - Favors total engagement (50 likes last week > 10 likes today)")
+    scoring_choice = input("Choose scoring method (1/2, default: 2): ").strip()
+    use_daily_average = scoring_choice == '1'
+    scoring_method = 'daily_average' if use_daily_average else 'standard'
+
     print()
 
     # Step 3: Fetch articles
@@ -498,7 +530,7 @@ def interactive_cli():
     # Step 4: Score articles
     print("Step 4: Score Articles")
     print("-" * 70)
-    generator.score_articles_daily_average()
+    generator.score_articles(use_daily_average=use_daily_average)
 
     print()
 
@@ -507,7 +539,9 @@ def interactive_cli():
     print("-" * 70)
     html = generator.generate_digest_html(
         featured_count=featured_count,
-        include_wildcard=include_wildcard
+        include_wildcard=include_wildcard,
+        days_back=days_back,
+        scoring_method=scoring_method
     )
 
     # Step 6: Save
