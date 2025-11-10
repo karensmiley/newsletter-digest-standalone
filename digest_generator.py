@@ -229,18 +229,14 @@ class DigestGenerator:
         Score articles based on engagement and content length
 
         Scoring formula:
-        - Engagement score (weighted heavily):
+        - Engagement component (weighted heavily):
           * Comments weighted 3x (deeper engagement)
           * Likes weighted 1x (standard engagement)
         - Daily average (optional): Divide by days since publication
-          * Favors recently published articles
-          * A 1-day article with 10 likes scores higher than 7-day article with 50 likes
-        - Standard (optional): Raw engagement without time adjustment
-          * Favors articles with most total engagement
-          * Better for highlighting evergreen content
-        - Length bonus (weighted lightly):
-          * 1000-2000 words: +10%
-          * 2000+ words: +20%
+        - Length component (ensures articles with 0 engagement still get scored):
+          * Word count / 100 as base points
+          * Ensures longer articles rank above zero even without engagement
+        - Final scores normalized to 1-100 range
 
         To customize scoring weights, edit the values below:
         """
@@ -254,16 +250,10 @@ class DigestGenerator:
         # SCORING CONFIGURATION - Edit these to change the scoring model
         COMMENT_WEIGHT = 3      # How much to weight comments (deeper engagement)
         LIKE_WEIGHT = 1         # How much to weight likes (standard engagement)
-
-        # Length bonuses (as decimal multipliers)
-        LONG_ARTICLE_WORDS = 2000
-        LONG_ARTICLE_BONUS = 0.20   # +20% for 2000+ words
-
-        MEDIUM_ARTICLE_WORDS = 1000
-        MEDIUM_ARTICLE_BONUS = 0.10  # +10% for 1000-2000 words
+        LENGTH_WEIGHT = 0.05    # Points per 100 words (e.g., 2000 words = 1 point)
 
         for article in self.articles:
-            # Calculate total engagement score
+            # Calculate engagement component
             engagement_score = (
                 (article['comment_count'] * COMMENT_WEIGHT) +
                 (article['reaction_count'] * LIKE_WEIGHT)
@@ -274,15 +264,29 @@ class DigestGenerator:
                 days_old = max((now - article['published']).days, 1)
                 engagement_score = engagement_score / days_old
 
-            # Calculate length bonus
-            length_bonus = 0
-            if article['word_count'] >= LONG_ARTICLE_WORDS:
-                length_bonus = LONG_ARTICLE_BONUS
-            elif article['word_count'] >= MEDIUM_ARTICLE_WORDS:
-                length_bonus = MEDIUM_ARTICLE_BONUS
+            # Calculate length component (ensures non-zero score)
+            # Word count contributes a small amount even with zero engagement
+            length_score = (article['word_count'] / 100) * LENGTH_WEIGHT
 
-            # Final score: engagement score (with or without daily avg) + length bonus
-            article['score'] = engagement_score * (1 + length_bonus)
+            # Combine engagement + length
+            article['raw_score'] = engagement_score + length_score
+
+        # Normalize scores to 1-100 range
+        if self.articles:
+            raw_scores = [a['raw_score'] for a in self.articles]
+            min_score = min(raw_scores)
+            max_score = max(raw_scores)
+
+            # Handle edge case where all scores are the same
+            score_range = max_score - min_score
+            if score_range == 0:
+                for article in self.articles:
+                    article['score'] = 50.0  # All get mid-range score
+            else:
+                for article in self.articles:
+                    # Normalize to 1-100 range
+                    normalized = ((article['raw_score'] - min_score) / score_range) * 99 + 1
+                    article['score'] = normalized
 
         # Sort by score descending
         self.articles.sort(key=lambda x: x['score'], reverse=True)

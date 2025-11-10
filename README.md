@@ -121,7 +121,11 @@ Step 4: Score Articles
 
 🏆 Top 5 articles:
    1. The Future of AI Agents
-      Score: 442.8 | 45 comments, 234 likes | 4,521 words | 2d old
+      Score: 100.0 | 45 comments, 234 likes | 4,521 words | 2d old
+   2. Understanding Neural Networks
+      Score: 87.3 | 12 comments, 89 likes | 3,200 words | 1d old
+   3. The Ethics of AI Development
+      Score: 65.2 | 8 comments, 45 likes | 2,800 words | 3d old
    ...
 
 Step 5: Generate Digest
@@ -194,8 +198,10 @@ You can choose between two scoring methods:
 
 **Formula:**
 ```python
-engagement_score = (comments × 3) + likes
-score = engagement_score × (1 + length_bonus)
+engagement = (comments × 3) + likes
+length = (word_count / 100) × 0.05
+raw_score = engagement + length
+normalized_score = scale to 1-100 range
 ```
 
 **Best for:**
@@ -204,18 +210,25 @@ score = engagement_score × (1 + length_bonus)
 - Weekly/bi-weekly digests with older articles
 - Balanced view across publication dates
 
+**Key features:**
+- Articles with 0 engagement still get scored based on length
+- All scores normalized to 1-100 range for consistency
+- Longer articles always rank above zero
+
 **Example:**
-- Article from 7 days ago with 50 likes = score of 50
-- Article from today with 10 likes = score of 10
-- The 7-day-old article wins! 🏆
+- Article with 50 likes, 2000 words = high engagement + length score
+- Article with 0 likes, 3000 words = low score but not zero
+- Article with 5 comments, 500 words = medium-high score
 
 #### 2. Daily Average Scoring
 
 **Formula:**
 ```python
-engagement_score = (comments × 3) + likes
-daily_avg = engagement_score / days_since_publication
-score = daily_avg × (1 + length_bonus)
+engagement = (comments × 3) + likes
+daily_avg_engagement = engagement / days_since_publication
+length = (word_count / 100) × 0.05
+raw_score = daily_avg_engagement + length
+normalized_score = scale to 1-100 range
 ```
 
 **Best for:**
@@ -224,29 +237,30 @@ score = daily_avg × (1 + length_bonus)
 - Identifying articles gaining momentum
 - When you want newest content prioritized
 
+**Key features:**
+- Same length scoring as Standard
+- Divides engagement by age in days
+- Favors recent articles with moderate engagement over older articles with high engagement
+
 **Example:**
-- Article from 7 days ago with 50 likes = score of 7.1/day
-- Article from today with 10 likes = score of 10/day
-- Today's article wins! 🏆
+- Article from 7 days ago with 50 likes = 7.1 engagement/day + length
+- Article from today with 10 likes = 10 engagement/day + length
+- Today's article likely wins! 🏆
 
 #### Shared Settings
 
 **Weights (both methods):**
 - **Comments: 3×** (deeper engagement signal)
 - **Likes: 1×** (standard engagement)
-- **Length bonus:**
-  - 1000-2000 words: +10%
-  - 2000+ words: +20%
+- **Length: 0.05 points per 100 words** (ensures non-zero scores)
+- **Score range: Always normalized to 1-100**
 
 **To customize scoring:**
-Edit the constants in `digest_generator.py` around line 245:
+Edit the constants in `digest_generator.py` around line 250:
 ```python
-COMMENT_WEIGHT = 3      # Change comment weight
-LIKE_WEIGHT = 1         # Change like weight
-LONG_ARTICLE_WORDS = 2000
-LONG_ARTICLE_BONUS = 0.20   # +20% bonus
-MEDIUM_ARTICLE_WORDS = 1000
-MEDIUM_ARTICLE_BONUS = 0.10  # +10% bonus
+COMMENT_WEIGHT = 3      # How much to weight comments (default: 3×)
+LIKE_WEIGHT = 1         # How much to weight likes (default: 1×)
+LENGTH_WEIGHT = 0.05    # Points per 100 words (default: 0.05)
 ```
 
 ## Troubleshooting
@@ -278,16 +292,15 @@ To customize the scoring model, edit `digest_generator.py` around line 250:
 
 ```python
 # SCORING CONFIGURATION - Edit these to change the scoring model
-COMMENT_WEIGHT = 3      # How much to weight comments (default: 3x)
-LIKE_WEIGHT = 1         # How much to weight likes (default: 1x)
-
-# Length bonuses (as decimal multipliers)
-LONG_ARTICLE_WORDS = 2000
-LONG_ARTICLE_BONUS = 0.20   # +20% for 2000+ words
-
-MEDIUM_ARTICLE_WORDS = 1000
-MEDIUM_ARTICLE_BONUS = 0.10  # +10% for 1000-2000 words
+COMMENT_WEIGHT = 3      # How much to weight comments (default: 3×)
+LIKE_WEIGHT = 1         # How much to weight likes (default: 1×)
+LENGTH_WEIGHT = 0.05    # Points per 100 words (default: 0.05)
 ```
+
+**Effect of changes:**
+- Increase `COMMENT_WEIGHT` to prioritize discussions over passive engagement
+- Increase `LENGTH_WEIGHT` to give more weight to longer, substantial articles
+- All scores are automatically normalized to 1-100 range
 
 ### HTML Styling
 
