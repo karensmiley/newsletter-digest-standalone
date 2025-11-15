@@ -27,10 +27,11 @@ Creates a formatted newsletter digest from your Substack subscriptions that you 
    Create a file named `my_newsletters.csv` with the following format:
 
    ```csv
-   Newsletter Name,Website URL,Category,Collections
-   The Generalist,https://thegeneralist.substack.com,Business,
-   Stratechery,https://stratechery.com,Technology,
+   Newsletter Name,Website URL,Category,Collections, Author
+   The Generalist,https://thegeneralist.substack.com,Business,,
+   Stratechery,https://stratechery.com,Technology,,Andrew Sharp
    Not Boring,https://notboring.substack.com,Business,Tech Favorites
+   Exponential View (Azeem Azhar),https://www.exponentialview.co/,AI & Machine Learning,SWAI,Chantal Smith
    ```
 
    **Required fields:**
@@ -39,8 +40,9 @@ Creates a formatted newsletter digest from your Substack subscriptions that you 
 
    **Optional fields:**
    - `Category` - For grouping articles (defaults to "Uncategorized")
-   - `Collections` - Additional tags or groupings (optional)
-
+   - `Collections` - Additional tags or groupings (optional, not currently used)
+   - `Author` - Only include articles by a specific author for a newsletter. Put the full or partial author name to match in the column. Blank for a row means no author name matching on that newsletter.
+   
    **Note:** Currently only supports Substack newsletters with public RSS feeds.
 
 2. **Install dependencies:**
@@ -64,28 +66,37 @@ That's it! You're ready to go.
 **python digest_generator.py [options]** - run with specified options and default values for unspecified options
 
 usage: digest_generator.py [-h] [--csv_path CSV_PATH] [--days_back DAYS_BACK] [--featured_count FEATURED_COUNT]
-                           [--wildcard WILDCARD] [--scoring_choice SCORING_CHOICE] [--show_scores SHOW_SCORES]
-                           [--output_file OUTPUT_FILE] [--verbose VERBOSE] [--interactive INTERACTIVE]
-						   
+                           [--max_retries MAX_RETRIES] [--wildcard WILDCARD] [--scoring_choice SCORING_CHOICE]
+                           [--show_scores SHOW_SCORES] [--use_substack_api USE_SUBSTACK_API]
+                           [--output_file OUTPUT_FILE] [--csv_digest_file CSV_DIGEST_FILE] [--verbose VERBOSE]
+                           [--interactive INTERACTIVE]
+
 Generate newsletter digest.
 
 options:
   -h, --help            show this help message and exit
+  --csv_digest_file CSV_DIGEST_FILE
+                        Output CSV filename for digest data (e.g., 'digest_output.csv'); default=none, use . for a default name
   --csv_path CSV_PATH   Path to CSV file (default='my_newsletters.csv')
   --days_back DAYS_BACK
                         How many days back to fetch articles (default=7)
   --featured_count FEATURED_COUNT
                         How many articles to feature (default=10)
-  --wildcard WILDCARD   Include wildcard pick? (default=n)
+  --interactive INTERACTIVE
+                        Use interactive prompting for inputs? (default='n')
+  --max_retries MAX_RETRIES
+                        Number of times to retry API calls (default=3)
+  --output_file OUTPUT_FILE
+                        Output HTML filename (e.g., default 'digest_output.html'; use . for a default name)
   --scoring_choice SCORING_CHOICE
-                        Scoring method: 1=Daily Average, 2=Standard (default=2)
+                        Scoring method: 1=Standard, 2=Daily Average (default=1)
   --show_scores SHOW_SCORES
                         Show scores outside the Featured section? (default=n)
-  --output_file OUTPUT_FILE
-                        Output filename (e.g., 'digest_output.html')
+  --use_substack_api USE_SUBSTACK_API
+                        Use Substack API to get engagement metrics? (default=n, get from RSS - restack counts not available)
   --verbose VERBOSE     More detailed outputs while program is running? (default='n')
-  --interactive INTERACTIVE
-                        Use interactive prompting for inputs? (default='n')						   
+  --wildcard WILDCARD   Include wildcard pick? (default=n)
+
 ```
 
 ### Interactive prompts:
@@ -109,8 +120,8 @@ You'll be asked:
    - Makes digest more interesting!
 
 5. **Scoring method** (default: Standard)
-   - Daily Average: Favors recent articles (10 likes today > 50 likes last week)
    - Standard: Favors total engagement (50 likes last week > 10 likes today)
+   - Daily Average: Favors recent articles (10 likes today > 50 likes last week)
 
 6. **Show scores** (default: yes)
    - Include scores on digest page for non-featured articles
@@ -212,7 +223,7 @@ Each article shows:
 - Title with link
 - Newsletter name
 - Engagement stats
-- Days since publication
+- Days since publication and date of publication
 
 ## How It Works
 
@@ -224,7 +235,7 @@ Each article shows:
 2. **HTML Parsing** - Extracts engagement metrics from article pages
    - Parses Schema.org structured data in meta tags
    - Gets `comment_count` and `like_count` (reactions)
-   - **No API calls** - complies with Substack TOS
+   - **No API calls** unless overridden in runstring - complies with Substack TOS
 
 ### Scoring Algorithm
 

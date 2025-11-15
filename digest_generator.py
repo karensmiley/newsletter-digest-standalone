@@ -29,6 +29,7 @@ from collections import defaultdict
 from pathlib import Path
 import re
 from bs4 import BeautifulSoup
+import pandas as pd
 
 # Added 2025-11-13 KJS
 import argparse
@@ -54,6 +55,7 @@ class DigestGenerator:
             reader = csv.DictReader(f)
             for row in reader:
                 # Build RSS URL from website URL (Substack pattern)
+                # Handle alternate name of this column in the file
                 website_url = row['Website URL'].strip()
 
                 # Extract base URL and build RSS feed
@@ -66,14 +68,18 @@ class DigestGenerator:
 
                 rss_url = f"{base_url}/feed"
 
-                self.newsletters.append({
+                newsletter = {
                     'name': row['Newsletter Name'],
                     'url': website_url,
                     'rss_url': rss_url,
                     'category': row.get('Category', 'Uncategorized'),
                     'collections': row.get('Collections', ''),
+                    'author': row.get('Author', ''),
+                    'article_count': 0,
                     # TO DO: Add author name & profile link for optional additional filtering
-                })
+                }
+                
+                self.newsletters.append(newsletter)
 
         # Check added 2025-11-13 KJS
         if len(self.newsletters) < 1: # no errors, but no newsletters found
@@ -83,7 +89,31 @@ class DigestGenerator:
         print(f"✅ Loaded {len(self.newsletters)} newsletters from CSV")
         return True
 
-    def fetch_articles(self, days_back=7):
+    '''
+    Retry API calls with increasing delays if we get 429 errors
+    '''
+    def api_call_retries(self, headers, url, retries=3):
+
+        retry_count=0; delay=1.0
+        while retry_count < retries:
+            
+            response = requests.get(url, headers=headers, timeout=10)
+
+            if response.status_code == 200: 
+                return response
+
+            print(f" ⚠️  HTTP {response.status_code}", end='', flush=True)
+
+            # KJS 2025-11-13 If response is 429, Too Many Requests, wait
+            # a while and then try again. We don't want to omit anyone.
+            time.sleep(delay) 
+            delay *= 2.0  # double the delay for next time if this try fails
+            retry_count += 1            
+
+        # If we get here, we exceeded our max retries. Give up on this call.
+        return None
+
+    def fetch_articles(self, days_back=7, use_Substack_API=True, max_retries=3):
         """Fetch recent articles from all newsletters"""
         print(f"\n📰 Fetching articles from past {days_back} days...")
 
@@ -109,19 +139,12 @@ class DigestGenerator:
 
                 print(f"  [{i}/{len(self.newsletters)}] {newsletter['name']}...", end='', flush=True)
 
-                # Fetch RSS feed
+                # Fetch RSS feed; retry if it times out or is overloaded
                 headers = {'User-Agent': 'Mozilla/5.0 (compatible; DigestBot/1.0)'}
-                response = requests.get(newsletter['rss_url'], headers=headers, timeout=10)
-
-                if response.status_code != 200:
-                    print(f" ⚠️  HTTP {response.status_code}", end='', flush=True)
-                    # KJS 2025-11-13 If response is 429, Too Many Requests, wait
-                    # a while and then try again. We don't want to omit anyone.
-                    time.sleep(2.0) # 1 second was not enough in some cases; try 2
-                    response = requests.get(newsletter['rss_url'], headers=headers, timeout=10)
-                    if response.status_code != 200:
-                        print(f" ⚠️  HTTP {response.status_code} on retry; skipping this newsletter")
-                        continue
+                response = self.api_call_retries(headers, newsletter['rss_url'], retries=max_retries)
+                if not response:
+                    print(f" Retry limit {max_retries} exceeded; skipping this newsletter")
+                    continue
 
                 feed = feedparser.parse(response.content)
                 article_count = 0
@@ -144,6 +167,12 @@ class DigestGenerator:
                         authors.append(entry.author)
                     elif hasattr(entry, 'authors') and entry.authors:
                         authors.extend([a.get('name', a) if isinstance(a, dict) else a for a in entry.authors])
+
+                    # KJS 2025-11-15 If the input CSV has an Author column, match on it
+                    newsletter_author=newsletter['author']
+                    if len(newsletter_author)>0 and not newsletter_author in authors:
+                        # Not the author we want; skip it
+                        continue
 
                     # Get content for word count (try content first, fallback to summary)
                     content_html = ''
@@ -178,11 +207,15 @@ class DigestGenerator:
                     }
 
                     # Get engagement metrics from HTML, not Substack API
-                    self._fetch_engagement_from_html(article)
+                    if use_Substack_API:
+                        self._fetch_engagement_metrics_substack_api(article, max_retries)
+                    else:
+                        self._fetch_engagement_from_html(article)
 
                     articles.append(article)
                     article_count += 1
 
+                newsletter['article_count']=article_count
                 if article_count > 0:
                     print(f" ✅ {article_count} articles")
                     success_count += 1
@@ -191,13 +224,14 @@ class DigestGenerator:
 
             except Exception as e:
                 print(f" ❌ Error: {e}")
+                newsletter['article_count']=-1
                 continue
 
         print(f"\n✅ Fetched {len(articles)} total articles from {success_count} newsletters")
         self.articles = articles
         return articles
 
-    def _fetch_engagement_metrics_substack_api(self, article):
+    def _fetch_engagement_metrics_substack_api(self, article, max_retries=3):
         """Fetch engagement metrics from Substack's public API"""
         try:
             # Extract slug from URL
@@ -222,9 +256,8 @@ class DigestGenerator:
                 'Accept': 'application/json'
             }
 
-            response = requests.get(api_url, headers=headers, timeout=10)
-
-            if response.status_code == 200:
+            response = self.api_call_retries(headers, api_url, retries=max_retries)
+            if response:
                 post_data = response.json()
 
                 # Extract engagement metrics
@@ -287,10 +320,7 @@ class DigestGenerator:
                             article['reaction_count'] = stat.get('userInteractionCount', 0)
                         elif stat.get('interactionType') == 'https://schema.org/CommentAction':
                             article['comment_count'] = stat.get('userInteractionCount', 0)
-                        # KJS 2025-11-13 Try to add restacks back in (as ShareAction?)
-                        elif stat.get('interactionType') == 'https://schema.org/ShareAction':
-                            article['restack_count'] = stat.get('userInteractionCount', 0)
-                        # restack_count isn't working - is there a different interactionType we could use?
+                        # restack_count is not available (ShareAction doesn't work).
                 except json.JSONDecodeError:
                     pass
 
@@ -418,14 +448,16 @@ class DigestGenerator:
                 now = datetime.now(timezone.utc)
                 days_old = (now - article['published']).days  # use max (, 1) here?
                 print(f"   {i}. {article['title'][:60]}") # handle unicode chars in article titles
+                restack_text = f", {article['restack_count']} restacks" if article['restack_count']>0 else "" 
                 print(f"      Score: {article['score']:.1f} | "
-                      f"{article['comment_count']} comments, "
                       f"{article['reaction_count']} likes, "
-                      f"{article['word_count']} words | {days_old}d old "
-                      f"({article['published'].strftime('%Y-%m-%d.%H:%M')})") # KJS Add actual date published (get in UTC?)
+                      f"{article['comment_count']} comments "
+                      f"{restack_text} | "
+                      f"{article['word_count']} words | "
+                      f"{days_old}d old "
+                      f"({article['published'].strftime('%Y-%m-%d %H:%M')})") # KJS Add actual date published (show in UTC?)
 
                 # removed from above for now, until restack count is working:
-                #f"{article['restack_count']} restacks | "
 
 
     def generate_digest_html(self, featured_count=5, include_wildcard=False, days_back=7, scoring_method='daily_average', show_scores=True):
@@ -603,7 +635,31 @@ class DigestGenerator:
         </div>
         '''
 
-    def save_digest(self, html, filename='digest_output.html'):
+    '''Save digest data to CSV file '''
+    def save_digest_csv(self, csv_digest_file):
+        
+        # Save articles to a dataframe
+        if not self.articles:
+            print(f"No articles to save to CSV file {csv_digest_file}")
+            return 0
+        
+        # Save the dataframe to the CSV file specified
+        try:
+            articles_df = pd.DataFrame(self.articles)
+            articles_df.to_csv(csv_digest_file, index=False)
+            print(f"CSV digest data saved to {csv_digest_file}")
+        except (FileNotFoundError, IOError, OSError, PermissionError) as e:        
+            print(f"\nERROR: Writing to CSV digest output file '{csv_digest_file}' failed: {e}\n")
+            return (-1)
+        except Exception as e:        
+            print(f"\nERROR: Exception while writing CSV digest output file '{csv_digest_file}': {e}\n")
+            return (-1)
+       
+        print(f"\n💾 Digest data saved to: {csv_digest_file}")
+        return len(self.articles)
+        
+
+    def save_digest_html(self, html, filename='digest_output.html'):
         """Save digest to HTML file"""
         output_path = Path(filename)
 
@@ -621,10 +677,10 @@ class DigestGenerator:
 '''
 Non-Interactive function for digest generation (so it can be scripted and scheduled)
 '''
-def automated_digest(csv_path, days_back, featured_count, include_wildcard, use_daily_average, scoring_method, show_scores, verbose, output_file):
+def automated_digest(csv_path, days_back, featured_count, include_wildcard, use_daily_average, scoring_method, show_scores, use_Substack_API, verbose, max_retries, output_file, csv_digest_file):
 
     print("=" * 70)
-    print("📧 Standalone Newsletter Digest Generator")
+    print("📧 Standalone Newsletter Digest Generator") # if you get an encoding error here, set PYTHONIOENCODING=utf_8
     print("=" * 70)
     print()
 
@@ -646,7 +702,7 @@ def automated_digest(csv_path, days_back, featured_count, include_wildcard, use_
     # Step 3: Fetch articles
     print("Step 3: Fetch Articles")
     print("-" * 70)
-    articles = generator.fetch_articles(days_back=days_back) # TO DO: Update to handle start date-end date
+    articles = generator.fetch_articles(days_back=days_back, use_Substack_API=use_Substack_API, max_retries=max_retries) # TO DO: Update to handle start date-end date
 
     if not articles:
         print("\n❌ No articles found! Try increasing the lookback period.")
@@ -661,8 +717,16 @@ def automated_digest(csv_path, days_back, featured_count, include_wildcard, use_
 
     print()
 
-    # Step 5: Generate digest
-    print("Step 5: Generate Digest")
+    # Step 5: Generate digest HTML and CSV and save them
+    # Save the data on the articles to a dataframe, then to CSV (if option selected by user)
+    print("Step 5: Save Digest")
+    print("-" * 70)
+    if csv_digest_file and len(csv_digest_file)>0:
+        print(f"Saving article data to {csv_digest_file}")
+        generator.save_digest_csv(csv_digest_file)
+    else:
+        print(f"Skipping; no csv_digest_file name specified")
+
     print("-" * 70)
     html = generator.generate_digest_html(
         featured_count=featured_count,
@@ -670,11 +734,7 @@ def automated_digest(csv_path, days_back, featured_count, include_wildcard, use_
         scoring_method=scoring_method,
         show_scores=show_scores
     )
-
-    # Step 6: Save
-    generator.save_digest(html, output_file)
-
-    # TO DO: Save the data on the articles to a dataframe, then to CSV (if option selected by user)
+    generator.save_digest_html(html, output_file)
 
     print("\n" + "=" * 70)
     print("✅ Digest generation complete!")
@@ -728,15 +788,19 @@ def main():
     # See if we have runstring arguments. If so, use them and don't do prompting
     # Allow interactive mode to be an option
     parser = argparse.ArgumentParser(description="Generate newsletter digest.")
+    # Put these in alphabetical order to make it easier for users to understand the help text
     parser.add_argument("--csv_path", help="Path to CSV file (default='my_newsletters.csv')", default="my_newsletters.csv")
     parser.add_argument("--days_back", help="How many days back to fetch articles (default=7)", type=int, default=7)
     parser.add_argument("--featured_count", help="How many articles to feature (default=10)", type=int, default=10)
-    parser.add_argument("--wildcard", help="Include wildcard pick? (default=n)", default='n')
-    parser.add_argument("--scoring_choice", help="Scoring method: 1=Daily Average, 2=Standard (default=2)",default='2')
-    parser.add_argument("--show_scores", help="Show scores outside the Featured section? (default=n)",default='n')
-    parser.add_argument("--output_file", help="Output filename (e.g., 'digest_output.html')", default="digest_output.html")
-    parser.add_argument("--verbose", help="More detailed outputs while program is running? (default='n')", default='n')
     parser.add_argument("--interactive", help="Use interactive prompting for inputs? (default='n')", default='n')
+    parser.add_argument("--max_retries", help="Number of times to retry API calls (default=3)", type=int, default=3)
+    parser.add_argument("--output_file_csv", help="Output CSV filename for digest data (e.g., 'digest_output.csv'); default=none, use . for a default name", default="")
+    parser.add_argument("--output_file_html", help="Output HTML filename (e.g., default 'digest_output.html'; use . for a default name)", default="")
+    parser.add_argument("--scoring_choice", help="Scoring method: 1=Standard, 2=Daily Average (default=1)",default='1')
+    parser.add_argument("--show_scores", help="Show scores outside the Featured section? (default=n)",default='n')
+    parser.add_argument("--use_substack_api", help="Use Substack API to get engagement metrics? (default=n, get from RSS - restack counts not available)",default='n')
+    parser.add_argument("--verbose", help="More detailed outputs while program is running? (default='n')", default='n')
+    parser.add_argument("--wildcard", help="Include wildcard pick? (default=n)", default='n')
 
     print("=" * 70)
     print("📧 Standalone Newsletter Digest Generator")
@@ -757,13 +821,25 @@ def main():
             days_back         = args.days_back
             featured_count    = args.featured_count
             include_wildcard  = (args.wildcard[0].lower() != 'n')
-            use_daily_average = args.scoring_choice == '1'
+            use_daily_average = args.scoring_choice == '2'
             show_scores       = (args.show_scores[0].lower() != 'n')
+            use_Substack_API  = (args.use_substack_api[0].lower() != 'n')
             verbose           = (args.verbose[0].lower() != 'n')
-            output_file       = args.output_file.strip()
-            if not output_file or len(output_file) < 2:
-                output_file = 'digest_output.html'    # TO DO: Make a default name based on input name
-            print("\nRunning digest generator with defaults and settings from runstring\n")
+            max_retries       = args.max_retries
+
+            output_file       = args.output_file_html.strip()
+            if not output_file or len(output_file) < 1:  # use a default name
+                output_file = 'digest_output.html'    
+            elif len(output_file) < 2:  # create a default name based on input file name
+                output_file = csv_path.replace('.csv','.digest_output.html')
+                
+            csv_digest_file = args.output_file_csv.strip()
+            if not csv_digest_file or len(csv_digest_file)<1:
+                csv_digest_file = ''        # default is no CSV output file
+            elif len(csv_digest_file) < 2:  # create a default name based on input file name
+                csv_digest_file = csv_path.replace('.csv','.digest_output.csv')
+
+            print("\nRunning digest generator with defaults and settings from runstring. (Use --interactive to be prompted.)\n")
 
         if verbose:
             print(f"CSV path: {csv_path}")
@@ -771,11 +847,15 @@ def main():
             print(f"Featured count: {featured_count}")
             print(f"Include wildcard? {include_wildcard}")
             print(f"Show scores? {show_scores}")
-            print(f"Output file: {output_file}")
+            print(f"Use Substack API for engagement metrics? {use_Substack_API}")
+            print(f"Max retries on Substack RSS feed and API calls? {max_retries}")
+            print(f"Output file HTML: {output_file}")
+            print(f"Output file CSV: {csv_digest_file}")
             print()
         
         scoring_method = ('daily_average' if use_daily_average else 'standard')
-        result=automated_digest(csv_path, days_back, featured_count, include_wildcard, use_daily_average, scoring_method, show_scores, verbose, output_file)
+
+        result=automated_digest(csv_path, days_back, featured_count, include_wildcard, use_daily_average, scoring_method, show_scores, use_Substack_API, verbose, max_retries, output_file, csv_digest_file)
     
     except KeyboardInterrupt:
         print("\n\n👋 Cancelled by user")
