@@ -113,7 +113,7 @@ class DigestGenerator:
         # If we get here, we exceeded our max retries. Give up on this call.
         return None
 
-    def fetch_articles(self, days_back=7, use_Substack_API=True, max_retries=3):
+    def fetch_articles(self, days_back=7, use_Substack_API=True, max_retries=3, match_authors=False):
         """Fetch recent articles from all newsletters"""
         print(f"\n📰 Fetching articles from past {days_back} days...")
 
@@ -170,7 +170,7 @@ class DigestGenerator:
 
                     # KJS 2025-11-15 If the input CSV has an Author column, match on it
                     newsletter_author=newsletter['author']
-                    if len(newsletter_author)>0 and not newsletter_author in authors:
+                    if match_authors and len(newsletter_author)>0 and not newsletter_author in authors:
                         # Not the author we want; skip it
                         continue
 
@@ -677,7 +677,7 @@ class DigestGenerator:
 '''
 Non-Interactive function for digest generation (so it can be scripted and scheduled)
 '''
-def automated_digest(csv_path, days_back, featured_count, include_wildcard, use_daily_average, scoring_method, show_scores, use_Substack_API, verbose, max_retries, output_file, csv_digest_file):
+def automated_digest(csv_path, days_back, featured_count, include_wildcard, use_daily_average, scoring_method, show_scores, use_Substack_API, verbose, max_retries, match_authors, output_file, csv_digest_file):
 
     print("=" * 70)
     print("📧 Standalone Newsletter Digest Generator") # if you get an encoding error here, set PYTHONIOENCODING=utf_8
@@ -702,7 +702,7 @@ def automated_digest(csv_path, days_back, featured_count, include_wildcard, use_
     # Step 3: Fetch articles
     print("Step 3: Fetch Articles")
     print("-" * 70)
-    articles = generator.fetch_articles(days_back=days_back, use_Substack_API=use_Substack_API, max_retries=max_retries) # TO DO: Update to handle start date-end date
+    articles = generator.fetch_articles(days_back=days_back, use_Substack_API=use_Substack_API, max_retries=max_retries, match_authors=match_authors) # TO DO: Update to handle start date-end date
 
     if not articles:
         print("\n❌ No articles found! Try increasing the lookback period.")
@@ -793,6 +793,7 @@ def main():
     parser.add_argument("--days_back", help="How many days back to fetch articles (default=7)", type=int, default=7)
     parser.add_argument("--featured_count", help="How many articles to feature (default=10)", type=int, default=10)
     parser.add_argument("--interactive", help="Use interactive prompting for inputs? (default='n')", default='n')
+    parser.add_argument("--match_authors", help="Use Author column in CSV file to filter articles (default='n')", default='n')
     parser.add_argument("--max_retries", help="Number of times to retry API calls (default=3)", type=int, default=3)
     parser.add_argument("--output_file_csv", help="Output CSV filename for digest data (e.g., 'digest_output.csv'); default=none, use . for a default name", default="")
     parser.add_argument("--output_file_html", help="Output HTML filename (e.g., default 'digest_output.html'; use . for a default name)", default="")
@@ -821,6 +822,7 @@ def main():
             days_back         = args.days_back
             featured_count    = args.featured_count
             include_wildcard  = (args.wildcard[0].lower() != 'n')
+            match_authors     = (args.match_authors[0].lower() != 'n')
             use_daily_average = args.scoring_choice == '2'
             show_scores       = (args.show_scores[0].lower() != 'n')
             use_Substack_API  = (args.use_substack_api[0].lower() != 'n')
@@ -846,6 +848,7 @@ def main():
             print(f"Days back: {days_back}")
             print(f"Featured count: {featured_count}")
             print(f"Include wildcard? {include_wildcard}")
+            print(f"Match authors? {match_authors}")
             print(f"Show scores? {show_scores}")
             print(f"Use Substack API for engagement metrics? {use_Substack_API}")
             print(f"Max retries on Substack RSS feed and API calls? {max_retries}")
@@ -855,7 +858,7 @@ def main():
         
         scoring_method = ('daily_average' if use_daily_average else 'standard')
 
-        result=automated_digest(csv_path, days_back, featured_count, include_wildcard, use_daily_average, scoring_method, show_scores, use_Substack_API, verbose, max_retries, output_file, csv_digest_file)
+        result=automated_digest(csv_path, days_back, featured_count, include_wildcard, use_daily_average, scoring_method, show_scores, use_Substack_API, verbose, max_retries, match_authors, output_file, csv_digest_file)
     
     except KeyboardInterrupt:
         print("\n\n👋 Cancelled by user")
