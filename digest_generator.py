@@ -57,6 +57,9 @@ class DigestGenerator:
                 # Build RSS URL from website URL (Substack pattern)
                 # Handle alternate name of this column in the file
                 website_url = row['Website URL'].strip()
+                
+                # Handle blank lines in the input file (e.g. rows with an author name but no newsletter)
+                if len(website_url) < 1: continue
 
                 # Extract base URL and build RSS feed
                 # Handle both custom domains and substack.com URLs
@@ -457,7 +460,7 @@ class DigestGenerator:
                       f"{days_old}d old "
                       f"({article['published'].strftime('%Y-%m-%d %H:%M')})") # KJS Add actual date published (show in UTC?)
 
-                # removed from above for now, until restack count is working:
+                # publication date is not showing up ???
 
 
     def generate_digest_html(self, featured_count=5, include_wildcard=False, days_back=7, scoring_method='daily_average', show_scores=True):
@@ -517,7 +520,7 @@ class DigestGenerator:
             articles = categorized[category]
 
             if articles:
-                html_parts.append(f'<h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin: 40px 0 20px 0; padding-bottom: 8px; border-bottom: 1px solid #eee; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif;">{category}</h2>')
+                html_parts.append(f'<h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin: 40px 0 20px 0; padding-bottom: 8px; border-bottom: 1px solid #eee; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif;">{category} ({len(articles)})</h2>')
 
                 # TO DO: If not showing scores, consider grouping by newsletter and then ordering by date descending
                 for article in articles:
@@ -538,7 +541,9 @@ class DigestGenerator:
             author_text = ' & '.join(article['authors'])
             first_line_parts.append(f"by {author_text}")
         days_ago = (datetime.now(timezone.utc) - article['published']).days  # use max (, 1) here?
-        first_line_parts.append(f" • {days_ago}d ago")
+        first_line_parts.append(f" • {days_ago}d ago ")
+        first_line_parts.append(f"({article['published'].strftime('%Y-%m-%d %H:%M')})") # KJS Add actual date published (show in UTC?)
+
         # TO DO: add actual date published
         
         return f'<div>{" • ".join(first_line_parts)}</div>'
@@ -565,11 +570,11 @@ class DigestGenerator:
         word_count = article.get('word_count', 0)            
         if word_count > 0:
             words_line = f' • {word_count:,} words'
-            engagement_html += f' • {words_line}'
+            engagement_html += words_line
         if show_scores:
             score = article.get('score', 0)
-            score_line = f'Score: {score:.1f}'
-            engagement_html += f' • {score_line}'
+            score_line = f' • Score: {score:.1f}'
+            engagement_html += score_line
         engagement_html += '</div>'        
         return engagement_html
 
