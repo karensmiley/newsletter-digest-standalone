@@ -27,7 +27,7 @@ Creates a formatted newsletter digest from your Substack subscriptions that you 
    Create a file named `my_newsletters.csv` with the following format:
 
    ```csv
-   Newsletter Name,Website URL,Category,Collections, Author
+   Newsletter Name,Website URL,Category,Collections, Author, Substack Handle
    The Generalist,https://thegeneralist.substack.com,Business,,
    Stratechery,https://stratechery.com,Technology,,Andrew Sharp
    Not Boring,https://notboring.substack.com,Business,Tech Favorites
@@ -66,10 +66,12 @@ That's it! You're ready to go.
 **python digest_generator.py --interactive Y** - prompt for main configuration options
 **python digest_generator.py [options]** - run with specified options and default values for unspecified options
 
-usage: digest_generator.py [-h] [--csv_path CSV_PATH] [--days_back DAYS_BACK]
+usage: digest_generator.py [-h] [--csv_path CSV_PATH] 
+                           [--days_back DAYS_BACK]
                            [--featured_count FEATURED_COUNT]
                            [--interactive INTERACTIVE]
                            [--match_authors MATCH_AUTHORS]
+                           [--max_articles_per_author MAX_ARTICLES_PER_AUTHOR]
                            [--max_retries MAX_RETRIES]
                            [--output_file_csv OUTPUT_FILE_CSV]
                            [--output_file_html OUTPUT_FILE_HTML]
@@ -77,57 +79,72 @@ usage: digest_generator.py [-h] [--csv_path CSV_PATH] [--days_back DAYS_BACK]
                            [--scoring_choice SCORING_CHOICE]
                            [--show_scores SHOW_SCORES]
                            [--use_substack_api USE_SUBSTACK_API]
-                           [--verbose VERBOSE] [--wildcards WILDCARDS]
+                           [--verbose VERBOSE] 
+						   [--wildcards WILDCARDS]
 
 Generate newsletter digest.
 
+options:
   -h, --help            show this help message and exit
-  --csv_path CSV_PATH   Path to CSV file with newsletter list or saved article
-                        data (default='my_newsletters.csv')
+  --csv_path CSV_PATH   Path to CSV file with newsletter list (OR saved
+                        article data, with --reuse_CSV_data Y).
+                        Default='my_newsletters.csv'
   --days_back DAYS_BACK
-                        How many days back to fetch articles (default=7)
+                        How many days back to fetch articles. Default=7,
+                        min=1.
   --featured_count FEATURED_COUNT
-                        How many articles to feature (default=5)
+                        How many articles to feature. Default=5, max=20.
   --interactive INTERACTIVE
-                        Use interactive prompting for inputs? (default='n')
+                        Use interactive prompting for inputs? Default=N.
   --match_authors MATCH_AUTHORS
-                        Use Author column in CSV file to filter articles
-                        (default='y'; no effect if no such column in the file,
-                        or cell is blank)
+                        Use Author column in CSV newsletter file to filter
+                        articles (partial matching)? Default=Y. Has no effect
+                        if no Author column in the file, or if cell is blank
+                        for a newsletter row.
+  --max_articles_per_author MAX_ARTICLES_PER_AUTHOR
+                        Maximum number of articles to include for each
+                        newsletter and author combination. 0=no limit, 1=most
+                        recent only, 2-max=20 ok. Default=0.
   --max_retries MAX_RETRIES
-                        Number of times to retry API calls (default=3)
+                        Number of times to retry failed API calls with
+                        increasing delays. Default=3. Retries will be logged
+                        as ⏱ .
   --output_file_csv OUTPUT_FILE_CSV
                         Output CSV filename for digest data (e.g.,
-                        'digest_output.csv'); default=none, use . for a
-                        default name
+                        'digest_output.csv'). Default=none. Use '.' for a
+                        default filename based on csv_path, timestamp, and
+                        settings.
   --output_file_html OUTPUT_FILE_HTML
-                        Output HTML filename (e.g., default
-                        'digest_output.html'; omit or use . for a default
-                        name)
+                        Output HTML filename (e.g., 'digest_output.html' in
+                        interactive mode). Omit or use '.' in runstring for a
+                        default name based on csv_path, timestamp, and
+                        settings.
   --reuse_csv_data REUSE_CSV_DATA
-                        Read article data from CSV Path instead of newslettere
-                        data; don't fetch data via RSS (default: n)
+                        Read article data from CSV Path instead of newsletter
+                        data. If Y, don't fetch article data via RSS or fetch
+                        new engagement metrics. Default=N.
   --scoring_choice SCORING_CHOICE
-                        Scoring method: 1=Standard, 2=Daily Average
-                        (default=1)
+                        Scoring method: 1=Standard, 2=Daily Average.
+                        Default=1.
   --show_scores SHOW_SCORES
-                        Show scores outside the Featured and Wildcard
-                        sections? (default=y)
+                        Show scores on articles outside the Featured and
+                        Wildcard sections? Default=Y.
   --use_substack_api USE_SUBSTACK_API
-                        Use Substack API to get engagement metrics?
-                        (default=n, get from RSS - faster but restack counts
-                        are not available)
+                        Use Substack API to get engagement metrics? Default=N,
+                        get from HTML (faster, but restack counts are not
+                        available)
   --verbose VERBOSE     More detailed outputs while program is running?
-                        (default='n')
+                        Default=N.
   --wildcards WILDCARDS
-                        Number of wildcard picks to include (default=1)
+                        Number of wildcard picks to include. Default=1,
+                        max=20.
 
 ```
 To test different format or scoring settings without having to wait to re-fetch articles,
 run the program once using runstring option:
   `--output_file_csv=(article_data_filename)`
 Then when you run the program again for testing, specify in the runstring: 
-  `--reuse_csv_file --csv_path=(article_data_filename)`. 
+  `--reuse_csv_file Y --csv_path=(article_data_filename)`
 This allows very fast iteration, even with no network connection, and repeatable tests.
 
 ### Interactive prompts:
@@ -239,7 +256,7 @@ Top-scored articles with:
 - Newsletter name with link
 - Author name
 - Days since publication and publication date
-- Engagement stats (comments, likes) and score
+- Engagement stats (comments, likes, restacks if available) and score
 - Article summary
 
 ### 🎲 Wildcard Picks (optional)
@@ -251,13 +268,14 @@ Remaining articles grouped by category, using categories in the newsletter CSV f
 - Technology
 - Culture
 - etc.
+If there is no Category column in the newsletter CSV file, all articles will be grouped as Uncategorized.
 
-Each article shows:
+Each categorized article shows:
 - Title with link
 - Newsletter name with link
 - Author name
 - Days since publication and date of publication
-- Engagement stats (comments, likes) and (optionally) score
+- Engagement stats (comments, likes, restacks if available) and (if not suppressed) score
 
 ## How It Works
 
@@ -305,7 +323,7 @@ normalized_score = scale to 1-100 range
 
 **Formula:**
 ```python
-engagement = (comments × 3) + likes
+engagement = (comments × 2) + likes
 daily_avg_engagement = engagement / days_since_publication
 length = (word_count / 100) × 0.05
 raw_score = daily_avg_engagement + length
@@ -363,13 +381,13 @@ LENGTH_WEIGHT = 0.05    # Points per 100 words (default: 0.05)
 
 ### "HTTP errors" during fetch
 - Some newsletters may be temporarily down
-- Script will retry a few times, then skip and continue with others
-- Normal to see a few failures in large lists
+- Script will retry a few times, then skip and continue with others; each retry will show ⏱ 
+- Common to see a few failures in large lists or with long lookback periods
 - To reduce these failures, increase the number of retry attempts (set via the runstring)
 
 ### Engagement metrics are zero
 - Article may genuinely have no engagement yet
-- HTML parsing may have failed for that specific article
+- HTML retrieval or parsing may have failed for that specific article
 - API calls to fetch engagement metrics may have timed out, even after retries
 - Articles are still included, just scored lower
 
@@ -406,6 +424,7 @@ Note that Substack will igmore these settings when you paste the digest into the
 - **Featured count**: Set via CLI prompt or runstring
 - **Wildcard count**: Set via CLI prompt or runstring
 - **Articles per category**: No limit
+- **Articles per newsletter+author**: Default is no limit. Can set a limit in the runstring. Substack RSS limits seem to be 20 articles max.
 
 ## Support
 
