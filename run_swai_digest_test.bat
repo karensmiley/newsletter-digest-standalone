@@ -2,7 +2,6 @@
 cls
 echo Starting RUN_SWAI_DIGEST_TEST.bat at %date% %time%
 
-cd c:\kj\myCode\GitHub\newsletter-digest-standalone
 if not exist logs mkdir logs
 call venv_activate.bat
 
@@ -10,21 +9,6 @@ REM TO DO: Add step that fetches the latest list of newsletters from the SWAI di
 
 REM See if this solves the encoding issues with special characters
 set PYTHONIOENCODING=utf_8
-
-REM Runstring options:
-REM usage: digest_generator.py [-h]
-REM        [--csv_path CSV_PATH] 
-REM        [--days_back DAYS_BACK]
-REM        [--featured_count FEATURED_COUNT]
-REM        [--interactive INTERACTIVE] 
-REM        [--max_retries MAX_RETRIES]
-REM        [--output_file_csv OUTPUT_FILE_CSV]
-REM        [--output_file_html OUTPUT_FILE_HTML]
-REM        [--scoring_choice SCORING_CHOICE]
-REM        [--show_scores SHOW_SCORES]
-REM        [--use_substack_api USE_SUBSTACK_API] 
-REM        [--verbose VERBOSE]
-REM        [--wildcard WILDCARD]
 
 call setDT.bat
 
@@ -51,4 +35,5 @@ dir logs\%dt%_my_swai_newsletters_test.log
 
 call venv_deactivate.bat
 echo Finished at %date% %time%. See log file logs\%dt%_my_swai_newsletters_test.log
+
 exit /b 0
