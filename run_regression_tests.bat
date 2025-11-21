@@ -10,6 +10,14 @@ REM setDT.bat before each program execution, so each run has its own timestamped
 REM into the folder name, to avoid any issues if e.g. test1 and test2 execute within the same minute
 REM and both save temp files (but right now, test1 doesn't save anything to temp, so it's safe).
 
+REM This script uses a subfolder 'inputs' with the following files:
+REM   my_newsletters.csv
+REM   kjs_newsletters.csv
+REM   smiley_newsletters.csv
+REM   2025-11-20_my_SWAI_newsletters.csv 
+REM Results (HTML and CSV) and log files will be stored in a dated TESTS subfolder. 
+REM Intermediate files (HTML and JSON) will be stored in a dated TEMP subfolder.
+
 echo digest_generator.py regression tests starting at %date% %time%
 
 call venv_activate.bat
