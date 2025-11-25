@@ -1,19 +1,20 @@
 
-**********************************************************************
-Digest generator v1.0.1 starting at 2025-11-22 05:22
+********************************************************************************
+Digest generator v1.0.2 starting at 2025-11-25 01:58
 
-======================================================================
+================================================================================
 📧 Standalone Newsletter Digest Generator
-======================================================================
+================================================================================
 
 Step 1: Digest Configuration
-----------------------------------------------------------------------
+--------------------------------------------------------------------------------
 
 usage: digest_generator.py [-h] [-i] [-a ARTICLES_PER_AUTHOR] [-c CSV_PATH]
                            [-d DAYS_BACK] [-f FEATURED_COUNT] [-hs] [-nm]
-                           [-nn] [-oc OUTPUT_FILE_CSV] [-oh OUTPUT_FILE_HTML]
-                           [-ra] [-r RETRIES] [-s {1,2}] [-t TEMP_FOLDER] [-u]
-                           [-v] [-w WILDCARDS]
+                           [-nn] [-o OUTPUT_FOLDER] [-oc OUTPUT_FILE_CSV]
+                           [-oh OUTPUT_FILE_HTML] [-ra] [-rt RETRIES]
+                           [-s {1,2}] [-t TEMP_FOLDER] [-ts] [-u] [-v]
+                           [-w WILDCARDS] [-xma]
 
 Generate newsletter digest.
 
@@ -44,32 +45,38 @@ options:
                         row.
   -nn, --no_normalization
                         Suppress normalization of final scores to 1-100 range.
-                        (Raw scores over 100 are still capped at final
-                        score=100 regardless.)
+                        (Raw scores over 100.0 are still capped at final
+                        score=100.0 regardless.)
+  -o OUTPUT_FOLDER, --output_folder OUTPUT_FOLDER
+                        Subfolder for saving default OUTPUT_FILE_CSV and
+                        OUTPUT_FILE_HTML. Will be created if it does not
+                        exist. Default: folder location of CSV_PATH.
   -oc OUTPUT_FILE_CSV, --output_file_csv OUTPUT_FILE_CSV
                         Output CSV filename for digest article data (e.g.,
-                        'digest_output.csv'). Default=none. Use '.' for a
-                        default filename based on csv_path, timestamp, and
-                        settings.
+                        'digest_articles.csv'). Default=none. Use '.' for a
+                        default filename based on OUTPUT_FOLDER, CSV_PATH
+                        filename, settings, and timestamp (if enabled).
   -oh OUTPUT_FILE_HTML, --output_file_html OUTPUT_FILE_HTML
                         Output HTML filename (e.g., 'digest_output.html' in
                         interactive mode). Omit or use '.' in runstring for a
-                        default name based on csv_path, timestamp, and
-                        settings.
+                        default name based on OUTPUT_FOLDER, CSV_PATH
+                        filename, settings, and timestamp (if enabled).
   -ra, --reuse_article_data
                         Read article data from CSV Path instead of newsletter
                         data.
-  -r RETRIES, --retries RETRIES
+  -rt RETRIES, --retries RETRIES
                         Number of times to retry failed API calls with
                         increasing delays. Default=3. Retries will be logged
                         as ⏱ .
   -s {1,2}, --scoring_choice {1,2}
                         Scoring method: 1=Standard, 2=Daily Average.
-                        Default=1.
+                        Default=1. Weights: Likes=1, Comments=2, Restacks=3,
+                        Length=0.05 per 100 words.
   -t TEMP_FOLDER, --temp_folder TEMP_FOLDER
                         Subfolder for saving temporary HTML and JSON files
                         (results of API calls), e.g. 'temp'. Default='' (no
                         temp files saved)
+  -ts, --timestamp      Add datetimestamp to the default output file names.
   -u, --use_substack_api
                         Use Substack API to get engagement metrics. (Default
                         is to get metrics from HTML (faster, but restack
@@ -78,3 +85,10 @@ options:
   -w WILDCARDS, --wildcards WILDCARDS
                         Number of wildcard picks to include. Default=1, min=0
                         (none), max=20.
+  -xma, --expand_multiple_authors
+                        When an article has multiple authors, expand the
+                        article to multiple rows of the digest article CSV
+                        (output) file for all authors included in the
+                        newsletter input file. Note that multiple authors are
+                        currently only detected when using the Substack API
+                        (-u option).
