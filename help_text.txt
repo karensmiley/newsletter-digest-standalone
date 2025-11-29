@@ -1,6 +1,6 @@
 
 ********************************************************************************
-Digest generator v1.0.2 starting at 2025-11-25 01:58
+Digest generator v1.0.3 starting at 2025-11-29 14:19
 
 ================================================================================
 📧 Standalone Newsletter Digest Generator
@@ -12,9 +12,10 @@ Step 1: Digest Configuration
 usage: digest_generator.py [-h] [-i] [-a ARTICLES_PER_AUTHOR] [-c CSV_PATH]
                            [-d DAYS_BACK] [-f FEATURED_COUNT] [-hs] [-nm]
                            [-nn] [-o OUTPUT_FOLDER] [-oc OUTPUT_FILE_CSV]
-                           [-oh OUTPUT_FILE_HTML] [-ra] [-rt RETRIES]
-                           [-s {1,2}] [-t TEMP_FOLDER] [-ts] [-u] [-v]
-                           [-w WILDCARDS] [-xma]
+                           [-oh OUTPUT_FILE_HTML] [-ra] [-rows MAX_ROWS]
+                           [-rt RETRIES] [-s {1,2}] [-skip SKIP_ROWS]
+                           [-t TEMP_FOLDER] [-ts] [-u] [-v] [-w WILDCARDS]
+                           [-xma]
 
 Generate newsletter digest.
 
@@ -64,6 +65,9 @@ options:
   -ra, --reuse_article_data
                         Read article data from CSV Path instead of newsletter
                         data.
+  -rows MAX_ROWS, --max_rows MAX_ROWS
+                        Maximum number of rows of newsletter file to read
+                        after skipping (default: no limit)
   -rt RETRIES, --retries RETRIES
                         Number of times to retry failed API calls with
                         increasing delays. Default=3. Retries will be logged
@@ -72,6 +76,9 @@ options:
                         Scoring method: 1=Standard, 2=Daily Average.
                         Default=1. Weights: Likes=1, Comments=2, Restacks=3,
                         Length=0.05 per 100 words.
+  -skip SKIP_ROWS, --skip_rows SKIP_ROWS
+                        Number of rows of newsletter file to skip (default:
+                        none)
   -t TEMP_FOLDER, --temp_folder TEMP_FOLDER
                         Subfolder for saving temporary HTML and JSON files
                         (results of API calls), e.g. 'temp'. Default='' (no
