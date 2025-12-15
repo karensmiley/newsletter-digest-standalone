@@ -1,6 +1,6 @@
 
 ********************************************************************************
-Digest generator v1.0.3 starting at 2025-12-01 01:28
+Digest generator v1.0.4 2025-12-12T0521 starting at 2025-12-12 05:30
 
 ================================================================================
 📧 Standalone Newsletter Digest Generator
@@ -10,12 +10,12 @@ Step 1: Digest Configuration
 --------------------------------------------------------------------------------
 
 usage: digest_generator.py [-h] [-i] [-a ARTICLES_PER_AUTHOR] [-c CSV_PATH]
-                           [-cc] [-d DAYS_BACK] [-f FEATURED_COUNT] [-hs]
+                           [-cc] [-d DAYS_BACK] [-f FEATURED_COUNT] [-hs] [-j]
                            [-nm] [-nn] [-o OUTPUT_FOLDER]
                            [-oc OUTPUT_FILE_CSV] [-oh OUTPUT_FILE_HTML] [-ra]
                            [-rows MAX_ROWS] [-rt RETRIES] [-s {1,2}]
                            [-skip SKIP_ROWS] [-t TEMP_FOLDER] [-ts] [-u] [-v]
-                           [-w WILDCARDS] [-xma]
+                           [-w WILDCARDS] [-xf] [-xma]
 
 Generate newsletter digest.
 
@@ -40,9 +40,13 @@ options:
                         min=1.
   -f FEATURED_COUNT, --featured_count FEATURED_COUNT
                         How many articles to feature. Default=5, min=0 (none),
-                        max=20.
+                        max=200.
   -hs, --hide_scores    Hide scores on articles outside the Featured and
                         Wildcard sections
+  -j, --joint_authors   Highlight in a separate section all collaborative
+                        articles (jointly authored by two or more people from
+                        the newsletter CSV file). Requires -u (use Substack
+                        API).
   -nm, --no_name_match  Do not use Author column in CSV newsletter file to
                         filter articles (partial matching). Matching is on by
                         default if Author column is in the newsletter file,
@@ -72,7 +76,9 @@ options:
                         OUTPUT_CSV file saved from a previous run of this
                         tool. Will bypass use of any API calls to read RSS,
                         HTML, or metrics, and will reuse previous scoring
-                        calculations.
+                        calculations. Use this to experiment quickly with
+                        different HTML output options or for repeatable
+                        testing.
   -rows MAX_ROWS, --max_rows MAX_ROWS
                         Maximum number of rows of newsletter file to read
                         after skipping (default: no limit)
@@ -99,7 +105,11 @@ options:
   -v, --verbose         More detailed outputs while program is running.
   -w WILDCARDS, --wildcards WILDCARDS
                         Number of wildcard picks to include. Default=1, min=0
-                        (none), max=20.
+                        (none), max=200.
+  -xf, --expand_featured_for_ties
+                        Expand the Featured section when more than
+                        --feature_count articles share the same top score
+                        (they're tied).
   -xma, --expand_multiple_authors
                         When an article has multiple authors, expand the
                         article to multiple rows of the digest article CSV
